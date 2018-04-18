@@ -87,7 +87,10 @@ def create_convolutional_layer(input,
                                 padding='SAME')
         ## Output of pooling is fed to Relu which is the activation function for us.
         #layer = tf.nn.relu(layer)
-    
+        #直方图
+        tf.summary.histogram("weights", weights)
+        tf.summary.histogram("biases", biases)
+        #tf.summary.histogram("activations", act)
         return layer
 
     
@@ -118,6 +121,11 @@ def create_fc_layer(input,
         layer=tf.nn.dropout(layer,keep_prob=0.7)#防止过拟合，保留70%
         if use_relu:
             layer = tf.nn.relu(layer)
+            #直方图
+            tf.summary.histogram("activations", layer)
+        tf.summary.histogram("weights", weights)
+        tf.summary.histogram("biases", biases)
+    
         return layer
 
     
@@ -156,16 +164,24 @@ def model(learning_rate, use_two_conv, use_two_fc, hparam):
         y_pred_cls = tf.argmax(y_pred, dimension=1)#得到预测值
         cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=layer_fc2,labels=y_true)
         cost = tf.reduce_mean(cross_entropy)
+        #画曲线
+        tf.summary.scalar("const",cost)
     with tf.name_scope("train"):
         train_step = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
     with tf.name_scope("accuracy"):
         correct_prediction = tf.equal(y_pred_cls, y_true_cls)#对比是否正确
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))#得到准确率
+        #画曲线
+        tf.summary.scalar("accuracy",accuracy)
+    summ = tf.summary.merge_all()
     session.run(tf.global_variables_initializer()) 
     #可视化 命令：tensorboard --logdir=./tensorboard/test1
+   
     tenboard_dir = './tensorboard/test2/'
     writer = tf.summary.FileWriter(tenboard_dir + hparam)
     writer.add_graph(session.graph)
+    
+    
     
     #train
     saver = tf.train.Saver()
@@ -179,6 +195,7 @@ def model(learning_rate, use_two_conv, use_two_fc, hparam):
             feed_dict_val = {x: x_valid_batch,y_true: y_valid_batch}
             #迭代一次（用train的数据）
             session.run(train_step, feed_dict=feed_dict_tr)
+           
             if i % int(data.train.num_examples/batch_size) == 0: 
                 val_loss = session.run(cost, feed_dict=feed_dict_val)#打印在验证集中的损失。
                 #epoch = int(i / int(data.train.num_examples/batch_size))   
@@ -189,6 +206,8 @@ def model(learning_rate, use_two_conv, use_two_fc, hparam):
                 msg = "Training Epoch {0}--- iterations: {1}--- Training Accuracy: {2:>6.1%}, Validation Accuracy: {3:>6.1%},  Validation Loss: {4:.3f}"
                 print(msg.format(epoch + 1,i, acc, val_acc, val_loss))
                 saver.save(session, './dogs-cats-model/dog-cat.ckpt',global_step=i) 
+                s,train_accuracy = session.run([summ,accuracy], feed_dict=feed_dict_tr)
+                writer.add_summary(s, i)
          
 
             
