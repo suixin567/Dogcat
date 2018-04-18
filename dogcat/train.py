@@ -98,13 +98,10 @@ def create_flatten_layer(layer):
     #We know that the shape of the layer will be [batch_size img_size img_size num_channels] 
     # But let's get it from the previous layer.
     layer_shape = layer.get_shape()
-
     ## Number of features will be img_height * img_width* num_channels. But we shall calculate it in place of hard-coding it.
     num_features = layer_shape[1:4].num_elements()#计算特征维数。【？，8，8，64】 即：8*8*64
-
     ## Now, we Flatten the layer so we shall have to reshape to num_features
     layer = tf.reshape(layer, [-1, num_features])
-
     return layer
 
 #创建一个全连接层
@@ -112,73 +109,56 @@ def create_fc_layer(input,
              num_inputs,    
              num_outputs,
              use_relu=True):
-    
     #Let's define trainable weights and biases.
     weights = create_weights(shape=[num_inputs, num_outputs])
     biases = create_biases(num_outputs)
-
     # Fully connected layer takes input x and produces wx+b.Since, these are matrices, we use matmul function in Tensorflow
     layer = tf.matmul(input, weights) + biases
-    
     layer=tf.nn.dropout(layer,keep_prob=0.7)#防止过拟合，保留70%
-    
     if use_relu:
         layer = tf.nn.relu(layer)
-        
-
     return layer
 
-#卷积层
-layer_conv1 = create_convolutional_layer(input=x,
+    
+def model():
+    #卷积层
+    layer_conv1 = create_convolutional_layer(input=x,
                num_input_channels=num_channels,
                conv_filter_size=filter_size_conv1,
                num_filters=num_filters_conv1)
-layer_conv2 = create_convolutional_layer(input=layer_conv1,
+    layer_conv2 = create_convolutional_layer(input=layer_conv1,
                num_input_channels=num_filters_conv1,
                conv_filter_size=filter_size_conv2,
                num_filters=num_filters_conv2)
 
-layer_conv3= create_convolutional_layer(input=layer_conv2,
+    layer_conv3= create_convolutional_layer(input=layer_conv2,
                num_input_channels=num_filters_conv2,
                conv_filter_size=filter_size_conv3,
                num_filters=num_filters_conv3)
           
-layer_flat = create_flatten_layer(layer_conv3)
+    layer_flat = create_flatten_layer(layer_conv3)
 
-layer_fc1 = create_fc_layer(input=layer_flat,
+    layer_fc1 = create_fc_layer(input=layer_flat,
                      num_inputs=layer_flat.get_shape()[1:4].num_elements(),
                      num_outputs=fc_layer_size,
                      use_relu=True)
 
-layer_fc2 = create_fc_layer(input=layer_fc1,
+    layer_fc2 = create_fc_layer(input=layer_fc1,
                      num_inputs=fc_layer_size,
                      num_outputs=num_classes,
                      use_relu=False) 
 
-y_pred = tf.nn.softmax(layer_fc2,name='y_pred')
+    y_pred = tf.nn.softmax(layer_fc2,name='y_pred')
+    y_pred_cls = tf.argmax(y_pred, dimension=1)#得到预测值
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=layer_fc2,labels=y_true)
+    cost = tf.reduce_mean(cross_entropy)
+    optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(cost)
+    correct_prediction = tf.equal(y_pred_cls, y_true_cls)#对比是否正确
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))#得到准确率
+    session.run(tf.global_variables_initializer()) 
 
-y_pred_cls = tf.argmax(y_pred, dimension=1)#得到预测值
-cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=layer_fc2,
-                                                    labels=y_true)
-cost = tf.reduce_mean(cross_entropy)
-optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(cost)
-correct_prediction = tf.equal(y_pred_cls, y_true_cls)#对比是否正确
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))#得到准确率
-
-
-session.run(tf.global_variables_initializer()) 
-
-
-def show_progress(epoch, feed_dict_train, feed_dict_validate, val_loss,i):
-    acc = session.run(accuracy, feed_dict=feed_dict_train)
-    val_acc = session.run(accuracy, feed_dict=feed_dict_validate)
-    msg = "Training Epoch {0}--- iterations: {1}--- Training Accuracy: {2:>6.1%}, Validation Accuracy: {3:>6.1%},  Validation Loss: {4:.3f}"
-    print(msg.format(epoch + 1,i, acc, val_acc, val_loss))
-
-
-
-saver = tf.train.Saver()
-def train():
+    #train
+    saver = tf.train.Saver()
     for i in range(num_iteration):
         #取batch数据
         x_batch, y_true_batch, _, cls_batch = data.train.next_batch(batch_size)
@@ -192,8 +172,13 @@ def train():
         if i % int(data.train.num_examples/batch_size) == 0: 
             val_loss = session.run(cost, feed_dict=feed_dict_val)#打印在验证集中的损失。
             #epoch = int(i / int(data.train.num_examples/batch_size))   
-            epoch = data.train.epochs_done             
-            show_progress(epoch, feed_dict_tr, feed_dict_val, val_loss,i)
+            epoch = data.train.epochs_done   
+            #打印
+            #show_progress(epoch, feed_dict_tr, feed_dict_val, val_loss,i)
+            acc = session.run(accuracy, feed_dict=feed_dict_tr)
+            val_acc = session.run(accuracy, feed_dict=feed_dict_val)
+            msg = "Training Epoch {0}--- iterations: {1}--- Training Accuracy: {2:>6.1%}, Validation Accuracy: {3:>6.1%},  Validation Loss: {4:.3f}"
+            print(msg.format(epoch + 1,i, acc, val_acc, val_loss))
             saver.save(session, './dogs-cats-model/dog-cat.ckpt',global_step=i) 
    
-train()
+model()
